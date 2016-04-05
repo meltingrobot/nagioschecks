@@ -1,0 +1,28 @@
+#!/usr/bin/ruby
+require 'optparse'
+
+options = {:disk => "r0"}
+parser = OptionParser.new do|opts|
+        opts.banner = "Usage: check_drbd -d DRBD_DISK #Defaults to r0"
+        opts.on('-d', '--disk disk', 'Disk') do |disk|
+                options[:disk] = disk;
+        end
+end
+
+parser.parse!
+
+drbd_output = `/sbin/drbdsetup sh-status #{options[:disk]} | grep '=' | grep -v '=$'`.split
+drbd_array = Hash.new
+drbd_output.each do |i|
+        j = `echo #{i}|cut -d  "=" -f 1|sed 's/^_//g'`.chomp
+        k = `echo #{i}|cut -d  "=" -f 2`.chomp
+        drbd_array[j] = k
+end
+
+if (drbd_array["role"] != "Primary")||(drbd_array["peer"] != "Primary")||(drbd_array["disk"] != "UpToDate")||(drbd_array["pdsk"] != "UpToDate")
+        puts "CRITICAL: role=#{drbd_array["role"]},peer=#{drbd_array["peer"]},disk=#{drbd_array["disk"]},pdsk=#{drbd_array["pdsk"]}"
+        exit 2
+end
+
+puts "OK: role=#{drbd_array["role"]},peer=#{drbd_array["peer"]},disk=#{drbd_array["disk"]},pdsk=#{drbd_array["pdsk"]}"
+exit 0
