@@ -1,0 +1,70 @@
+#!/usr/bin/ruby
+require 'trollop'
+
+def temp_conversion(a)
+  return 9 * a.to_i / 5 + 32
+end
+
+opts = Trollop::options do
+  opt :hostname, "The hostname or IP of the APC UPS", :type=> :string, :short => "-H"
+  opt :community, "The SNMP Community string: Defaults to public", :type => :string, :default => "public", :short=> "-C"
+  opt :vers, "The SNMP Version: Defaults to 2c", :type => :string, :default => "2c", :short=> "-V"
+  opt :check, "The type of APC UPS Check to run: Valid options are battery_time_left,battery_temp,sensor_temp", :type => :string, :short=> "-x"
+  opt :warning, "The WARNING threshold for the check", :type => :integer, :short=> "-w"
+  opt :critical, "The CRITICAL threshold for the check", :type => :integer, :short=> "-c"
+end
+
+case opts.check
+  when "battery_time"
+    battery_time = `snmpwalk #{opts.hostname} -v #{opts.vers} -c #{opts.community} -On .1.3.6.1.2.1.33.1.2.3.0 | tr -d ' ' | cut -d ":" -f 2`
+    if battery_time.empty?
+      puts "UNKNOWN: #{opts.hostname} is unreachable!"
+      exit 3
+    end
+    if battery_time.to_i < opts.critical
+      puts "CRITICAL: There is #{battery_time.chomp} minutes left before the power goes out!|BatteryTime=#{battery_time.chomp};;;;"
+      exit 2
+    elsif battery_time.to_i < opts.warning
+      puts "WARNING: There is #{battery_time.chomp} minutes left before the power goes out!|BatteryTime=#{battery_time.chomp};;;;"
+      exit 1
+    else
+      puts "OK: There is #{battery_time.chomp} minutes left before the power goes out.|BatteryTime=#{battery_time.chomp};;;;"
+      exit 0
+    end
+  when "battery_temp"
+    battery_temp = `snmpwalk #{opts.hostname} -v #{opts.vers} -c #{opts.community} -On .1.3.6.1.2.1.33.1.2.7.0 | tr -d ' ' | cut -d ":" -f 2`
+    if battery_temp.empty?
+      puts "UNKNOWN: #{opts.hostname} is unreachable!"
+      exit 3
+    end
+    battery_temp = temp_conversion(battery_temp.to_i)
+    if battery_temp > opts.critical
+      puts "CRITICAL: The UPS battery is #{battery_temp} degrees Fahrenheit!|BatteryTemp=#{battery_temp};;;;"
+      exit 2
+    elsif battery_temp > opts.warning
+      puts "WARNING: The UPS battery is #{battery_temp} degrees Fahrenheit!|BatteryTemp=#{battery_temp};;;;"
+      exit 1
+    else
+      puts "OK: The UPS battery is #{battery_temp} degrees Fahrenheit.|BatteryTemp=#{battery_temp};;;;"
+      exit 0
+    end
+  when "sensor_temp"
+    sensor_temp = `snmpwalk #{opts.hostname} -v #{opts.vers} -c #{opts.community} -On .1.3.6.1.4.1.318.1.1.10.2.3.2.1.4 | tr -d ' ' | cut -d ":" -f 2`
+    if sensor_temp.empty?
+      puts "UNKNOWN: #{opts.hostname} is unreachable!"
+      exit 3
+    end
+    sensor_temp = temp_conversion(sensor_temp.to_i)
+    if sensor_temp > opts.critical
+      puts "CRITICAL: The UPS external sensor is #{sensor_temp} degrees Fahrenheit!|BatteryTemp=#{sensor_temp};;;;"
+      exit 2
+    elsif sensor_temp > opts.warning
+      puts "WARNING: The UPS external sensor is #{sensor_temp} degrees Fahrenheit!|BatteryTemp=#{sensor_temp};;;;"
+      exit 1
+    else
+      puts "OK: The UPS external sensor is #{sensor_temp} degrees Fahrenheit.|BatteryTemp=#{sensor_temp};;;;"
+      exit 0
+    end
+  else
+    puts "Valid check options are: battery_time, battery_temp, sensor_temp"
+end
