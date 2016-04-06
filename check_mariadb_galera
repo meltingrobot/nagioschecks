@@ -1,0 +1,55 @@
+#!/usr/bin/ruby
+require 'optparse'
+require 'shellwords'
+mysql_cmd = "/usr/bin/mysql"
+
+options = {}
+op = OptionParser.new do |opts|
+        opts.banner = "Usage: check_mariadb_galera [options]"
+        opts.on("-H", "--hostname=HOST", "Host or IP to run check against") do |H|
+                options[:host] = H
+        end
+        opts.on("-P", "--port=PORT", "Port Mariadb/MySQL runs on") do |P|
+                options[:port] = P
+        end
+        opts.on("-u", "--user=USERNAME", "Username for the database") do |u|
+                options[:user] = u
+        end
+        opts.on("-p", "--pass=PASSWORD", "Password for the database") do |p|
+                options[:pass] = p
+        end
+        opts.on("-f", "--file=FILENAME", "File to use to load values instead of passing on command line, needs to be in the expected format for the --defaults-extra-file option for Mariadb/MySQL") do |f|
+                options[:file] = f
+        end
+        opts.on("-s", "--size=CLUSTERSIZE", "Expected size of the cluster. AKA how many nodes.") do |s|
+                options[:size] = s
+        end
+        opts.on("-r", "--role=ROLE", "Expected role of the node. Ex: Primary or Secondary") do |r|
+                options[:role] = r
+        end
+end.parse!
+
+mysql_cmd += " --defaults-extra-file=#{options[:file].shellescape}" if !options[:file].nil? && !options[:file].empty?
+mysql_cmd += " --host=#{options[:host].shellescape}" if !options[:host].nil? && !options[:host].empty?
+mysql_cmd += " --port=#{options[:port].shellescape}" if !options[:port].nil? && !options[:port].empty?
+mysql_cmd += " --user=#{options[:user].shellescape}" if !options[:user].nil? && !options[:user].empty?
+mysql_cmd += " --password=#{options[:pass].shellescape}" if !options[:pass].nil? && !options[:pass].empty?
+
+wsrep_conn = `#{mysql_cmd} -e "select VARIABLE_VALUE from information_schema.GLOBAL_STATUS where VARIABLE_NAME = 'wsrep_connected';" -ss`
+wsrep_stat = `#{mysql_cmd} -e "select VARIABLE_VALUE from information_schema.GLOBAL_STATUS where VARIABLE_NAME = 'wsrep_cluster_status';" -ss`
+wsrep_size = `#{mysql_cmd} -e "select VARIABLE_VALUE from information_schema.GLOBAL_STATUS where VARIABLE_NAME = 'wsrep_cluster_size';" -ss`
+
+if wsrep_size.to_i != options[:size].to_i && !options[:size].nil? && !options[:size].empty?
+        puts "CRITICAL: cluster is degraded, only #{wsrep_size.to_i} nodes available in the cluster"
+        exit 2
+end
+if wsrep_stat.chomp != options[:role].chomp && !options[:role].nil? && !options[:role].empty?
+        puts "CRITICAL: node role is #{wsrep_stat.chomp}."
+        exit 2
+end
+if wsrep_conn.chomp != "ON"
+        puts "CRITICAL: node connection is #{wsrep_conn.chomp}."
+        exit 2
+end
+
+puts "OK: node connection is #{wsrep_conn.chomp}, node role is #{wsrep_stat.chomp}, and the cluster size is #{wsrep_size.to_i}."
